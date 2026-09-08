@@ -1,24 +1,10 @@
-# Heatwave Early Warning System — Frontend V2
-
-## Run
-npm install
-npm run dev
-
-## Included
-- Responsive municipal dashboard
-- Sidebar navigation
-- Leaflet map with risk, vulnerability and healthcare layers
-- Zone selection and detailed metrics
-- 3–5 day forecast with chart
-- Analytics chart
-- Alert centre
-- Mock data and backend-ready structure
-
-## Replace mock data
-Edit `src/data.js` and connect your backend endpoints:
-GET /api/thermal-stress
-POST /api/forecast
-POST /api/alert-dispatch
-GET /api/dashboard-data
-
-All current values are illustrative mock data.
+## SIH-CREATIO
+backend/
+├── app.py (main Flask server)
+├── heat_calculator.py (heat stress math)
+├── mortality_predictor.py (simple ML model)
+├── data_loader.py (loads CSV data)
+├── requirements.txt (list of packages)
+└── data/
+    ├── weather_data.csv (get from Role 1)
+    └── mortality_data.csv (sample data)
