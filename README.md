@@ -8,4 +8,3 @@ backend/
 └── data/
     ├── weather_data.csv (get from Role 1)
     └── mortality_data.csv (sample data)
-https://github.com/Kihoro-code/UshnaKavach/tree/main
