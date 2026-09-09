@@ -1,23 +1,4 @@
-"""
-weather_fetch.py — pulls live weather data and keeps it updated automatically
-using a background scheduler.
 
-CONCEPT (mapped to what you already know):
-    This is like a background thread in Java that wakes up every N minutes,
-    does work, and updates a shared variable. Here, APScheduler handles the
-    "wake up every N minutes" part, and we store results in a plain Python
-    dict acting as an in-memory cache that your API endpoints read from.
-
-WHY NOT just fetch on every request?
-    - Weather doesn't change second to second, no need to hit the external
-      API that often
-    - Faster responses for your demo (reading a dict is instant vs. waiting
-      on a network call)
-    - Open-Meteo's free tier has a daily call limit (10,000/day) — polling
-      every 10 min instead of every request keeps you well under it
-
-pip install apscheduler httpx
-"""
 
 import httpx
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -33,30 +14,41 @@ LOCATIONS = {
     "Jaipur": (26.91, 75.79),
 }
 
-# -----------------------------
-# The in-memory cache. This is a plain dict that gets overwritten
-# every time the scheduled job runs. Endpoints read from THIS,
-# never call the external API directly.
-# -----------------------------
+
 weather_cache: dict = {}
-
-
 async def fetch_weather_for(lat: float, lon: float) -> dict:
-    """Fetch current weather for one location from Open-Meteo."""
     url = "https://api.open-meteo.com/v1/forecast"
     params = {
         "latitude": lat,
         "longitude": lon,
-        "current": "temperature_2m,relative_humidity_2m,wind_speed_10m",
+        "current": "temperature_2m,relative_humidity_2m,wind_speed_10m,dew_point_2m,surface_pressure,shortwave_radiation",
+        "hourly": "wet_bulb_temperature_2m,direct_radiation,diffuse_radiation,direct_normal_irradiance",
+        "forecast_days": 1,
     }
     async with httpx.AsyncClient(timeout=10) as client:
         response = await client.get(url, params=params)
-        data = response.json()["current"]
+        payload = response.json()  
+ 
+    data = payload["current"]
+    hourly = payload["hourly"]
+
     return {
         "temp_c": data["temperature_2m"],
         "rh_percent": data["relative_humidity_2m"],
         "wind_speed": data["wind_speed_10m"],
+        "dew_point": data["dew_point_2m"],
+        "pressure_hpa": data["surface_pressure"],
+        "solar_radiation": data["shortwave_radiation"],
+ 
+        # hourly fields — index 0 = current hour
+        "wet_bulb": hourly["wet_bulb_temperature_2m"][0],
+        "direct_radiation": hourly["direct_radiation"][0],
+        "diffuse_radiation": hourly["diffuse_radiation"][0],
+        "direct_normal_irradiance": hourly["direct_normal_irradiance"][0],
+ 
     }
+ 
+ 
 
 
 async def refresh_all_locations():
