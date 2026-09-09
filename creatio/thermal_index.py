@@ -13,6 +13,9 @@ import math
 
 from pythermalcomfort.models import utci
 
+import pandas as pd
+import pvlib
+
 
 # ---------------------------------------------------------
 # WBGT
@@ -247,3 +250,54 @@ def calculate_mrt_standard(Tg: float, Ta: float, wind_speed: float) -> float:
     ) ** 0.25 - 273.15
 
     return Tmrt
+
+
+def calculate_solar_zenith(
+    latitude: float,
+    longitude: float,
+    timestamp: str,
+    timezone: str
+) -> float:
+    """
+    Calculate solar zenith angle using the NREL SPA algorithm.
+
+    Parameters
+    ----------
+    latitude : float
+        Latitude in decimal degrees.
+        North = positive, South = negative.
+
+    longitude : float
+        Longitude in decimal degrees.
+        East = positive, West = negative.
+
+    timestamp : str
+        Date and time, e.g. "2026-09-09 12:30:00".
+
+    timezone : str
+        IANA timezone, e.g. "Asia/Kolkata".
+
+    Returns
+    -------
+    float
+        Solar zenith angle in degrees.
+    """
+
+    # Create timezone-aware timestamp
+    time = pd.DatetimeIndex([
+        pd.Timestamp(timestamp, tz=timezone)
+    ])
+
+    # Calculate solar position
+    solar_position = pvlib.solarposition.get_solarposition(
+        time=time,
+        latitude=latitude,
+        longitude=longitude,
+        method="nrel_numpy"
+    )
+
+    # Extract zenith angle
+    zenith = solar_position["zenith"].iloc[0]
+    z=math.radians(zenith)
+
+    return float(z)
