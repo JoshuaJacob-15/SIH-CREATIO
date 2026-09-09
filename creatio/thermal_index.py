@@ -21,14 +21,7 @@ from pythermalcomfort.models import utci
 def compute_wbgt(
     temp_c: float,
     tw: float,
-    dew_point: float,
-    rh: float,
-    wind_mh: float,
-    solar: float,
-    solar_dir: float,
-    solar_dif: float,
-    z_angle: float,
-    pressure: float,
+    tg: float,
     outdoor: bool,
 ) -> float:
     """
@@ -40,20 +33,6 @@ def compute_wbgt(
     Indoor:
         WBGT = 0.7 * Tw + 0.3 * Tg
     """
-
-    # Convert wind speed from m/s to m/hour.
-    wind_mh = 1000 * wind_mh
-
-    tg = black_globe_temperature(
-        wind_mh,
-        temp_c,
-        dew_point,
-        solar,
-        solar_dir,
-        solar_dif,
-        z_angle,
-        pressure,
-    )
 
     if outdoor:
         wbgt = (
@@ -97,6 +76,7 @@ def black_globe_temperature(
         z: Solar zenith angle in radians
         P: Barometric pressure in hPa
     """
+    u=u*1000
 
     sigma = 5.67e-8
     h = 0.315
