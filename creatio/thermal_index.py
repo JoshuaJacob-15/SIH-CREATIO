@@ -252,3 +252,18 @@ def calculate_utci(
     )
 
     return float(result.utci), result.stress_category
+
+
+def calculate_mrt_standard(Tg: float, Ta: float, wind_speed: float) -> float:
+    """
+    Mean radiant temperature for a standard 150-mm,
+    emissivity 0.95 black globe.
+    Tg : Globe temperature
+    """
+    wind_speed=wind_speed *1000/3600
+    Tmrt = (
+        (Tg + 273.15) ** 4
+        + 2.5e8 * wind_speed ** 0.6 * (Tg - Ta)
+    ) ** 0.25 - 273.15
+
+    return Tmrt
