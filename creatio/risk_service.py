@@ -3,45 +3,34 @@ risk_service.py
 
 Combines:
     - Weather data from weather_fetch.py
-    - WBGT calculation from thermal_index.py
+    - Black Globe Temperature
+    - WBGT calculation
     - Heat Index calculation
+    - Mean Radiant Temperature
     - UTCI calculation
-
-This file contains the application's heat-risk business logic.
-
-main.py should call this service instead of performing
-the calculations itself.
 """
 
 from typing import Optional
 
-from weather_fetch import weather_cache, LOCATIONS
+from weather_fetch import weather_cache
 
 from services.thermal_index import (
     compute_wbgt,
+    black_globe_temperature,
     wbgt_category,
     heat_index,
     calculate_utci,
+    calculate_mrt_standard,
 )
 
 
 def calculate_risk(city: str) -> dict:
     """
-    Calculate all available heat-stress indicators for a city.
-
-    Parameters
-    ----------
-    city : str
-        City name as stored in weather_cache.
-
-    Returns
-    -------
-    dict
-        Combined weather and heat-risk information.
+    Calculate all heat-stress indicators for a city.
     """
 
     # ---------------------------------------------------------
-    # 1. Check whether weather data exists
+    # 1. Check weather data
     # ---------------------------------------------------------
 
     if city not in weather_cache:
@@ -53,7 +42,7 @@ def calculate_risk(city: str) -> dict:
     weather = weather_cache[city]
 
     # ---------------------------------------------------------
-    # 2. Extract basic weather values
+    # 2. Basic weather values
     # ---------------------------------------------------------
 
     temp_c = weather["temp_c"]
@@ -61,24 +50,21 @@ def calculate_risk(city: str) -> dict:
     wind_speed = weather["wind_speed_ms"]
 
     # ---------------------------------------------------------
-    # 3. Extract additional weather values
-    #
-    # These will exist after weather_fetch.py is updated.
+    # 3. Additional weather values
     # ---------------------------------------------------------
 
     dew_point = weather.get("dew_point_c")
     tw = weather.get("wet_bulb_c")
+
     solar = weather.get("solar_w_m2")
     solar_dir = weather.get("direct_radiation_w_m2")
     solar_dif = weather.get("diffuse_radiation_w_m2")
-    pressure = weather.get("pressure_hpa")
 
-    # Solar zenith angle is not currently supplied by
-    # weather_fetch.py.
+    pressure = weather.get("pressure_hpa")
     z_angle = weather.get("solar_zenith_rad")
 
     # ---------------------------------------------------------
-    # 4. Calculate Heat Index
+    # 4. Heat Index
     # ---------------------------------------------------------
 
     hi = heat_index(
@@ -87,47 +73,17 @@ def calculate_risk(city: str) -> dict:
     )
 
     # ---------------------------------------------------------
-    # 5. Calculate UTCI
+    # 5. Black Globe Temperature
     #
-    # UTCI requires mean radiant temperature (Tmrt).
-    #
-    # We do NOT have a reliable Tmrt yet, so don't silently
-    # substitute air temperature.
+    # Tg is required for:
+    #     - WBGT
+    #     - Mean Radiant Temperature
+    #     - UTCI
     # ---------------------------------------------------------
 
-    utci_value: Optional[float] = None
-    utci_category: Optional[str] = None
+    globe_temperature: Optional[float] = None
 
-    tmrt = weather.get("mean_radiant_temperature_c")
-
-    if tmrt is not None:
-        utci_value, utci_category = calculate_utci(
-            Ta=temp_c,
-            Tmrt=tmrt,
-            wind_speed=wind_speed,
-            RH=rh,
-        )
-
-    # ---------------------------------------------------------
-    # 6. Calculate WBGT
-    #
-    # The full WBGT calculation needs:
-    #     wet bulb temperature
-    #     dew point
-    #     solar radiation
-    #     direct radiation
-    #     diffuse radiation
-    #     solar zenith angle
-    #     pressure
-    #
-    # If any of these are unavailable, WBGT is left as None.
-    # ---------------------------------------------------------
-
-    wbgt = None
-    wbgt_risk = None
-
-    required_wbgt_values = [
-        tw,
+    required_globe_values = [
         dew_point,
         solar,
         solar_dir,
@@ -136,29 +92,98 @@ def calculate_risk(city: str) -> dict:
         pressure,
     ]
 
-    if all(value is not None for value in required_wbgt_values):
+    if all(value is not None for value in required_globe_values):
+
+        globe_temperature = black_globe_temperature(
+            u=wind_speed,
+            Ta=temp_c,
+            Td=dew_point,
+            S=solar,
+            fdb=solar_dir,
+            fdif=solar_dif,
+            z=z_angle,
+            P=pressure,
+        )
+
+        globe_temperature = round(globe_temperature, 2)
+
+    # ---------------------------------------------------------
+    # 6. WBGT
+    #
+    # Outdoor WBGT:
+    #
+    # WBGT = 0.7 Tw + 0.2 Tg + 0.1 Ta
+    #
+    # Therefore both wet-bulb temperature and
+    # black-globe temperature are required.
+    # ---------------------------------------------------------
+
+    wbgt: Optional[float] = None
+    wbgt_risk: Optional[str] = None
+
+    if tw is not None and globe_temperature is not None:
 
         wbgt = compute_wbgt(
             temp_c=temp_c,
             tw=tw,
-            dew_point=dew_point,
-            rh=rh,
-            wind_mh=wind_speed,
-            solar=solar,
-            solar_dir=solar_dir,
-            solar_dif=solar_dif,
-            z_angle=z_angle,
-            pressure=pressure,
+            tg=globe_temperature,
             outdoor=True,
         )
 
         wbgt_risk = wbgt_category(wbgt)
 
     # ---------------------------------------------------------
-    # 7. Return combined result
+    # 7. Mean Radiant Temperature
+    #
+    # Tmrt is calculated from:
+    #     - Black globe temperature
+    #     - Air temperature
+    #     - Wind speed
+    #
+    # Tmrt is then used by UTCI.
     # ---------------------------------------------------------
 
-    result = {
+    tmrt: Optional[float] = None
+
+    if globe_temperature is not None:
+
+        tmrt = calculate_mrt_standard(
+            Tg=globe_temperature,
+            Ta=temp_c,
+            wind_speed=wind_speed,
+        )
+
+        tmrt = round(tmrt, 2)
+
+    # ---------------------------------------------------------
+    # 8. UTCI
+    #
+    # UTCI requires:
+    #     Ta
+    #     Tmrt
+    #     Wind speed
+    #     Relative humidity
+    # ---------------------------------------------------------
+
+    utci_value: Optional[float] = None
+    utci_category: Optional[str] = None
+
+    if tmrt is not None:
+
+        utci_value, utci_category = calculate_utci(
+            Ta=temp_c,
+            Tmrt=tmrt,
+            wind_speed=wind_speed,
+            RH=rh,
+        )
+
+        utci_value = round(utci_value, 2)
+
+    # ---------------------------------------------------------
+    # 9. Final result
+    # ---------------------------------------------------------
+
+    return {
         "city": city,
 
         "weather": weather,
@@ -167,9 +192,17 @@ def calculate_risk(city: str) -> dict:
             "value_c": hi,
         },
 
+        "black_globe_temperature": {
+            "value_c": globe_temperature,
+        },
+
         "wbgt": {
             "value_c": wbgt,
             "category": wbgt_risk,
+        },
+
+        "mean_radiant_temperature": {
+            "value_c": tmrt,
         },
 
         "utci": {
@@ -177,8 +210,6 @@ def calculate_risk(city: str) -> dict:
             "stress_category": utci_category,
         },
     }
-
-    return result
 
 
 def calculate_all_risks() -> dict:
@@ -190,10 +221,12 @@ def calculate_all_risks() -> dict:
     results = {}
 
     for city in weather_cache:
+
         try:
             results[city] = calculate_risk(city)
 
         except Exception as e:
+
             results[city] = {
                 "city": city,
                 "error": str(e),
