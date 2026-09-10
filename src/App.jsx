@@ -46,7 +46,64 @@ function App(){
  </div>;
  function MapPanel({full=false}){return <section className={"card panel map-panel "+(full?"full-map":"")}><div className="panel-head"><div><h3>Interactive city risk map</h3><p>Click a marker to inspect detailed thermal and vulnerability indicators.</p></div><div className="layer-buttons">{["risk","vulnerability","healthcare"].map(x=><button className={layer===x?"layer active":"layer"} onClick={()=>setLayer(x)} key={x}>{x}</button>)}</div></div><div className="map"><MapContainer center={[22.5726,88.3639]} zoom={5} scrollWheelZoom className="leaflet"><TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"/>{zones.map(z=><CircleMarker key={z.id} center={[z.lat,z.lng]} radius={selected.id===z.id?22:17} pathOptions={{color:"#fff",weight:3,fillColor:layer==="risk"?colors[z.risk]:layer==="vulnerability"?"#8b5cf6":"#0ea5e9",fillOpacity:.8}} eventHandlers={{click:()=>setSelected(z)}}><Popup><b>{z.name}</b><br/>MRI: {z.mri}<br/>UTCI: {z.utci}°C<br/><Badge risk={z.risk}>{z.risk} risk</Badge></Popup></CircleMarker>)}{layer==="healthcare"&&facilities.map(f=><Marker key={f.name} position={[f.lat,f.lng]} icon={icon}><Popup><b>{f.name}</b><br/>{f.type}<br/>{f.capacity}</Popup></Marker>)}</MapContainer><div className="map-key">{Object.keys(colors).map(r=><span key={r}><i style={{background:colors[r]}}/>{r}</span>)}</div></div></section>}
  function Details(){return <section className="card panel"><div className="panel-head"><div><h3>{selected.name}</h3><p>Detailed risk assessment</p></div><Badge risk={selected.risk}>{selected.risk} · MRI {selected.mri}</Badge></div><div className="metrics">{<><Metric label="UTCI" value={selected.utci} unit="°C equivalent"/><Metric label="Heat Index" value={selected.hi} unit="°C"/><Metric label="Humidity" value={selected.humidity+"%"} unit="relative humidity"/><Metric label="Wind speed" value={selected.wind} unit="m/s"/><Metric label="Vulnerable population" value={selected.vulnerable+"%"} unit="elderly + outdoor workers" progress={selected.vulnerable}/><Metric label="Healthcare capacity" value={selected.healthcare+"%"} unit="available capacity" progress={selected.healthcare}/></>}</div><div className="advisory"><b>Recommended action</b><p>{selected.advisory}</p></div></section>}
- function ForecastPanel(){return <div className="forecast-wrap"><div className="panel-head"><div><h3>3–5 day heat risk forecast</h3><p>Projected thermal stress and mortality risk</p></div><div>{[5,3].map(n=><button className={"toggle "+(days===n?"active":"")} onClick={()=>setDays(n)} key={n}>{n} days</button>)}</div></div><div className="forecast-grid">{forecast.slice(0,days).map(f=><div className="forecast-card" key={f.day}><small>{f.day}</small><strong>{f.temp}°</strong><span>UTCI {f.utci}°C</span><Badge risk={f.risk}>MRI {f.mri}</Badge></div>)}</div><div className="chart"><ResponsiveContainer width="100%" height={190}><LineChart data={forecast}><CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb"/><XAxis dataKey="day"/><YAxis/><Tooltip/><Line type="monotone" dataKey="mri" stroke="#f97316" strokeWidth={3} dot={{r:4}}/></LineChart></ResponsiveContainer></div></div>}
+ function ForecastPanel(){
+  const cityForecast = forecastByCity[selected.name] || forecastByCity.Kolkata;
+
+  return (
+    <div className="forecast-wrap">
+      <div className="panel-head">
+        <div>
+          <h3>3–5 day heat risk forecast</h3>
+          <p>Projected thermal stress and mortality risk for {selected.name}</p>
+        </div>
+
+        <div>
+          {[5,3].map(n => (
+            <button
+              className={"toggle "+(days===n?"active":"")}
+              onClick={() => setDays(n)}
+              key={n}
+            >
+              {n} days
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="forecast-grid">
+        {cityForecast.slice(0,days).map(f => (
+          <div className="forecast-card" key={f.day}>
+            <small>{f.day}</small>
+            <strong>{f.temp}°</strong>
+            <span>UTCI {f.utci}°C</span>
+            <Badge risk={f.risk}>MRI {f.mri}</Badge>
+          </div>
+        ))}
+      </div>
+
+      <div className="chart">
+        <ResponsiveContainer width="100%" height={190}>
+          <LineChart data={cityForecast}>
+            <CartesianGrid
+              strokeDasharray="3 3"
+              stroke="#e5e7eb"
+            />
+            <XAxis dataKey="day"/>
+            <YAxis/>
+            <Tooltip/>
+            <Line
+              type="monotone"
+              dataKey="mri"
+              stroke="#f97316"
+              strokeWidth={3}
+              dot={{r:4}}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
  function AlertPanel(){return <div className="alert-layout"><section className="card panel"><div className="panel-head"><div><h3>Create public health advisory</h3><p>Dispatch targeted alerts to affected zones.</p></div></div><label>Target zones</label><select><option>All high-risk zones</option>{zones.map(z=><option key={z.id}>{z.name}</option>)}</select><label>Message template</label><textarea value={message} onChange={e=>setMessage(e.target.value)}/><label>Delivery channels</label><div className="channels">{["SMS","WhatsApp","Dashboard"].map(x=><button key={x} className="channel active">{x}</button>)}</div><button className="primary" onClick={()=>{setSent(true);setTimeout(()=>setSent(false),3000)}}>{sent?"✓ Advisory queued":"Send advisory"}</button>{sent&&<div className="success">Advisory queued successfully (demo).</div>}</section><section className="card panel"><h3>Alert history</h3><div className="history"><div><b>Heat advisory · High-risk zones</b><small>Today, 10:30 AM · SMS + Dashboard</small><Badge risk="Orange">Sent</Badge></div><div><b>Cooling centre preparation</b><small>Yesterday, 4:15 PM · Municipal teams</small><Badge risk="Yellow">Completed</Badge></div></div></section></div>}
  function Analytics(){return <div className="analytics-grid"><section className="card panel"><h3>Risk distribution</h3><p className="muted">Current ward classification</p><ResponsiveContainer width="100%" height={280}><BarChart data={Object.entries(riskCounts).map(([risk,count])=>({risk,count}))}><CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb"/><XAxis dataKey="risk"/><YAxis allowDecimals={false}/><Tooltip/><Bar dataKey="count" fill="#f97316" radius={[5,5,0,0]}/></BarChart></ResponsiveContainer></section><section className="card panel"><h3>City indicators</h3><div className="big-indicator"><span>Population exposed</span><b>6.6L</b></div><div className="big-indicator"><span>Highest UTCI</span><b>45.0°C</b></div><div className="big-indicator"><span>Historical excess mortality</span><b>+24%</b></div><div className="big-indicator"><span>Cooling centres required</span><b>12</b></div></section></div>}
 }
