@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from "react";
 import {MapContainer,TileLayer,CircleMarker,Popup,Marker} from "react-leaflet";
 import L from "leaflet";
 import {LineChart,Line,BarChart,Bar,XAxis,YAxis,CartesianGrid,Tooltip,ResponsiveContainer} from "recharts";
-import {zones as demoZones,forecast,facilities} from "./data";
+import {zones as demoZones,forecastByCity,facilities} from "./data";
 import {getLiveRiskZones} from "./api";
 
 const colors={Green:"#16a34a",Yellow:"#eab308",Orange:"#f97316",Red:"#dc2626"};
