@@ -28,12 +28,14 @@ Try:
 """
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from typing import Optional, Dict
 from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 from weather_fetch import (
     weather_cache,
@@ -143,6 +145,23 @@ app = FastAPI(
     description="Real-time heat health risk assessment using WBGT, UTCI, and vulnerability metrics",
     version="2.0",
     lifespan=lifespan,
+)
+
+# The dashboard runs on a separate development server during local work.
+# Keep allowed origins configurable so deployment can restrict this further.
+allowed_origins = [
+    origin.strip()
+    for origin in os.getenv(
+        "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
+    ).split(",")
+    if origin.strip()
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=False,
+    allow_methods=["GET"],
+    allow_headers=["*"],
 )
 
 
