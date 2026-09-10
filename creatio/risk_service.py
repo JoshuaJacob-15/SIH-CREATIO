@@ -47,18 +47,18 @@ def calculate_risk(city: str) -> dict:
 
     temp_c = weather["temp_c"]
     rh = weather["rh_percent"]
-    wind_speed = weather["wind_speed_ms"]
+    wind_speed = weather["wind_speed"]
 
     # ---------------------------------------------------------
     # 3. Additional weather values
     # ---------------------------------------------------------
 
-    dew_point = weather.get("dew_point_c")
-    tw = weather.get("wet_bulb_c")
+    dew_point = weather.get("dew_point")
+    tw = weather.get("wet_bulb")
 
-    solar = weather.get("solar_w_m2")
-    solar_dir = weather.get("direct_radiation_w_m2")
-    solar_dif = weather.get("diffuse_radiation_w_m2")
+    solar = weather.get("direct_normal_irradiance")
+    solar_dir = weather.get("direct_radiation")
+    solar_dif = weather.get("diffuse_radiation")
 
     pressure = weather.get("pressure_hpa")
     z_angle = weather.get("solar_zenith_rad")
