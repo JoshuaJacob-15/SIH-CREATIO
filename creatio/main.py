@@ -1,8 +1,11 @@
 """
-main.py — Heat Stress Early Warning backend, now with auto-updating weather.
+main.py — Heat Stress Early Warning backend.
+
+Uses risk_service.py, which pulls together weather data plus the full
+WBGT / black-globe / MRT / UTCI calculations from thermal_index.py.
 
 HOW TO RUN:
-    pip install fastapi uvicorn httpx apscheduler
+    pip install fastapi uvicorn httpx apscheduler pythermalcomfort pvlib pandas
     uvicorn main:app --reload
 
 Try:
@@ -11,7 +14,6 @@ Try:
     http://127.0.0.1:8000/risk/all         <- risk for every demo city at once
 """
 
-import math
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 
@@ -20,6 +22,11 @@ from weather_fetch import (
     refresh_all_locations,
     start_scheduler,
     LOCATIONS,
+)
+
+from risk_service import (
+    calculate_risk,
+    calculate_all_risks,
 )
 
 
@@ -43,32 +50,8 @@ app = FastAPI(lifespan=lifespan)
 
 
 # -----------------------------
-# Thermal stress calculation — unchanged, pure math, no dependencies
-# -----------------------------
-def compute_wbgt_simplified(temp_c: float, rh_percent: float) -> float:
-    vapor_pressure = (rh_percent / 100) * 6.105 * math.exp(
-        17.27 * temp_c / (237.7 + temp_c)
-    )
-    wbgt = 0.567 * temp_c + 0.393 * vapor_pressure + 3.94
-    return round(wbgt, 2)
-
-
-def classify_risk(wbgt: float) -> str:
-    if wbgt < 28:
-        return "green"
-    elif wbgt < 30:
-        return "yellow"
-    elif wbgt < 32:
-        return "orange"
-    elif wbgt < 35:
-        return "red"
-    return "black"
-
-
-# -----------------------------
-# Endpoints — these now read from weather_cache instead of
-# calling the external API directly. Instant response, always
-# reflects the most recent scheduled refresh.
+# Endpoints — these read from weather_cache and hand off to
+# risk_service.py for the actual WBGT / black-globe / MRT / UTCI math.
 # -----------------------------
 @app.get("/risk/current")
 def current_risk(city: str):
@@ -77,27 +60,17 @@ def current_risk(city: str):
             status_code=404,
             detail=f"No data for '{city}'. Available: {list(LOCATIONS.keys())}",
         )
-    weather = weather_cache[city]
-    wbgt = compute_wbgt_simplified(weather["temp_c"], weather["rh_percent"])
-    return {
-        "city": city,
-        "weather": weather,
-        "wbgt": wbgt,
-        "risk_tier": classify_risk(wbgt),
-    }
+    try:
+        return calculate_risk(city)
+    except ValueError as e:
+        # calculate_risk also validates city presence; keep this as a
+        # belt-and-suspenders guard in case the cache changes mid-request.
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 @app.get("/risk/all")
 def all_risk():
-    results = {}
-    for city, weather in weather_cache.items():
-        wbgt = compute_wbgt_simplified(weather["temp_c"], weather["rh_percent"])
-        results[city] = {
-            "weather": weather,
-            "wbgt": wbgt,
-            "risk_tier": classify_risk(wbgt),
-        }
-    return results
+    return calculate_all_risks()
 
 
 @app.get("/health")
