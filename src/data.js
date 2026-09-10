@@ -8,13 +8,47 @@ export const zones=[
 {id:"lake",name:"Lake Ward",risk:"Yellow",mri:38,utci:37.8,hi:40.1,humidity:64,wind:3.1,vulnerable:18,healthcare:78,mortality:5,population:"0.5L",lat:22.535,lng:88.395,advisory:"Continue monitoring and encourage hydration and shade."},
 {id:"harbor",name:"Harbor Ward",risk:"Green",mri:18,utci:33.2,hi:35,humidity:58,wind:3.8,vulnerable:13,healthcare:86,mortality:2,population:"0.4L",lat:22.525,lng:88.345,advisory:"No special action required. Continue normal heat-safety communication."}
 ];
-export const forecast=[
-{day:"Today",temp:44,utci:41.2,mri:72,risk:"Orange"},
-{day:"Tomorrow",temp:45,utci:42.8,mri:78,risk:"Orange"},
-{day:"10 Sep",temp:46,utci:44.1,mri:84,risk:"Red"},
-{day:"11 Sep",temp:44,utci:42,mri:76,risk:"Orange"},
-{day:"12 Sep",temp:42,utci:39.5,mri:55,risk:"Yellow"}
-];
+export const forecastByCity = {
+  Delhi: [
+    {day:"Today",temp:39,utci:40.2,mri:62,risk:"Orange"},
+    {day:"Tomorrow",temp:41,utci:42.1,mri:70,risk:"Orange"},
+    {day:"10 Sep",temp:42,utci:43.5,mri:78,risk:"Orange"},
+    {day:"11 Sep",temp:40,utci:41.8,mri:68,risk:"Orange"},
+    {day:"12 Sep",temp:38,utci:39.6,mri:52,risk:"Yellow"}
+  ],
+
+  Chennai: [
+    {day:"Today",temp:35,utci:38.5,mri:48,risk:"Yellow"},
+    {day:"Tomorrow",temp:36,utci:39.2,mri:54,risk:"Yellow"},
+    {day:"10 Sep",temp:37,utci:40.1,mri:61,risk:"Orange"},
+    {day:"11 Sep",temp:36,utci:39.5,mri:55,risk:"Yellow"},
+    {day:"12 Sep",temp:35,utci:38.8,mri:49,risk:"Yellow"}
+  ],
+
+  Ahmedabad: [
+    {day:"Today",temp:42,utci:43.0,mri:76,risk:"Orange"},
+    {day:"Tomorrow",temp:43,utci:44.2,mri:82,risk:"Red"},
+    {day:"10 Sep",temp:44,utci:45.0,mri:88,risk:"Red"},
+    {day:"11 Sep",temp:42,utci:43.5,mri:79,risk:"Orange"},
+    {day:"12 Sep",temp:40,utci:41.2,mri:65,risk:"Orange"}
+  ],
+
+  Kolkata: [
+    {day:"Today",temp:34,utci:41.2,mri:72,risk:"Orange"},
+    {day:"Tomorrow",temp:35,utci:42.8,mri:78,risk:"Orange"},
+    {day:"10 Sep",temp:36,utci:44.1,mri:84,risk:"Red"},
+    {day:"11 Sep",temp:34,utci:42.0,mri:76,risk:"Orange"},
+    {day:"12 Sep",temp:32,utci:39.5,mri:55,risk:"Yellow"}
+  ],
+
+  Jaipur: [
+    {day:"Today",temp:40,utci:42.0,mri:68,risk:"Orange"},
+    {day:"Tomorrow",temp:42,utci:43.5,mri:76,risk:"Orange"},
+    {day:"10 Sep",temp:43,utci:44.4,mri:83,risk:"Red"},
+    {day:"11 Sep",temp:41,utci:42.8,mri:74,risk:"Orange"},
+    {day:"12 Sep",temp:39,utci:40.5,mri:58,risk:"Yellow"}
+  ]
+};
 export const facilities=[
 {name:"Central General Hospital",type:"Hospital",lat:22.572,lng:88.363,capacity:"42% available"},
 {name:"South Emergency Centre",type:"Emergency",lat:22.545,lng:88.365,capacity:"34% available"},
