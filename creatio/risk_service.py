@@ -12,7 +12,12 @@ Combines:
 
 from typing import Optional
 
-from weather_fetch import weather_cache
+from weather_fetch import (
+    weather_cache,
+    refresh_all_locations,
+    start_scheduler,
+    LOCATIONS,
+)
 
 from services.thermal_index import (
     compute_wbgt,
@@ -21,6 +26,7 @@ from services.thermal_index import (
     heat_index,
     calculate_utci,
     calculate_mrt_standard,
+    calculate_solar_zenith,
 )
 
 
@@ -61,7 +67,8 @@ def calculate_risk(city: str) -> dict:
     solar_dif = weather.get("diffuse_radiation")
 
     pressure = weather.get("pressure_hpa")
-    z_angle = weather.get("solar_zenith_rad")
+
+    
 
     # ---------------------------------------------------------
     # 4. Heat Index
