@@ -69,9 +69,37 @@ def calculate_risk(city: str) -> dict:
     pressure = weather.get("pressure_hpa")
 
     
+    # =========================================================
+    # 4. SOLAR ZENITH ANGLE
+    #
+    # Calculate it here using:
+    #
+    #     city latitude
+    #     city longitude
+    #     weather timestamp
+    #
+    # The result is in radians, which is what
+    # black_globe_temperature() expects.
+    # =========================================================
 
+    z_angle: Optional[float] = None
+
+    if city in LOCATIONS:
+
+        latitude, longitude = LOCATIONS[city]
+
+        timestamp = weather.get("time_stamp")
+
+        if timestamp is not None:
+
+            z_angle = calculate_solar_zenith(
+                latitude=latitude,
+                longitude=longitude,
+                timestamp=timestamp,
+                timezone="Asia/Kolkata",
+            )
     # ---------------------------------------------------------
-    # 4. Heat Index
+    # 5. Heat Index
     # ---------------------------------------------------------
 
     hi = heat_index(
@@ -80,7 +108,7 @@ def calculate_risk(city: str) -> dict:
     )
 
     # ---------------------------------------------------------
-    # 5. Black Globe Temperature
+    # 6. Black Globe Temperature
     #
     # Tg is required for:
     #     - WBGT
@@ -115,7 +143,7 @@ def calculate_risk(city: str) -> dict:
         globe_temperature = round(globe_temperature, 2)
 
     # ---------------------------------------------------------
-    # 6. WBGT
+    # 7. WBGT
     #
     # Outdoor WBGT:
     #
@@ -140,7 +168,7 @@ def calculate_risk(city: str) -> dict:
         wbgt_risk = wbgt_category(wbgt)
 
     # ---------------------------------------------------------
-    # 7. Mean Radiant Temperature
+    # 8. Mean Radiant Temperature
     #
     # Tmrt is calculated from:
     #     - Black globe temperature
@@ -163,7 +191,7 @@ def calculate_risk(city: str) -> dict:
         tmrt = round(tmrt, 2)
 
     # ---------------------------------------------------------
-    # 8. UTCI
+    # 9. UTCI
     #
     # UTCI requires:
     #     Ta
@@ -187,7 +215,7 @@ def calculate_risk(city: str) -> dict:
         utci_value = round(utci_value, 2)
 
     # ---------------------------------------------------------
-    # 9. Final result
+    # 10. Final result
     # ---------------------------------------------------------
 
     return {
