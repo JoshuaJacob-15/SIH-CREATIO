@@ -2,7 +2,7 @@
 
 import httpx
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-
+import datetime
 # -----------------------------
 # Your demo locations, hardcoded for now (city name -> lat/lon)
 # -----------------------------
@@ -16,7 +16,27 @@ LOCATIONS = {
 
 
 weather_cache: dict = {}
+
+def get_formatted_timestamp():
+    # Fetch the current local date and time
+    current_time = datetime.datetime.now()
+    
+    # Format the datetime object as a string
+    formatted_timestamp = current_time.strftime("%Y-%m-%d %H:%M:%S")
+    
+    return formatted_timestamp
+ts=get_formatted_timestamp()
 async def fetch_weather_for(lat: float, lon: float) -> dict:
+    """
+    Fetch current weather for one location from Open-Meteo.
+ 
+    NOTE on current vs hourly:
+    - "current" fields come back as single values (one number).
+    - "hourly" fields come back as LISTS (one value per hour in the forecast
+      window). Some variables — wet bulb temp, direct/diffuse radiation —
+      are only reliably available via "hourly", so we request both and pull
+      index [0] from the hourly lists, which is the current hour.
+    """
     url = "https://api.open-meteo.com/v1/forecast"
     params = {
         "latitude": lat,
@@ -27,11 +47,17 @@ async def fetch_weather_for(lat: float, lon: float) -> dict:
     }
     async with httpx.AsyncClient(timeout=10) as client:
         response = await client.get(url, params=params)
-        payload = response.json()  
+        payload = response.json()  # parse ONCE, reuse below
  
     data = payload["current"]
     hourly = payload["hourly"]
-
+ 
+ 
+    wet_bulb_list = hourly.get("wet_bulb_temperature_2m")
+    direct_rad_list = hourly.get("direct_radiation")
+    diffuse_rad_list = hourly.get("diffuse_radiation")
+    dni_list = hourly.get("direct_normal_irradiance")
+ 
     return {
         "temp_c": data["temperature_2m"],
         "rh_percent": data["relative_humidity_2m"],
@@ -40,13 +66,15 @@ async def fetch_weather_for(lat: float, lon: float) -> dict:
         "pressure_hpa": data["surface_pressure"],
         "solar_radiation": data["shortwave_radiation"],
  
-        # hourly fields — index 0 = current hour
-        "wet_bulb": hourly["wet_bulb_temperature_2m"][0],
-        "direct_radiation": hourly["direct_radiation"][0],
-        "diffuse_radiation": hourly["diffuse_radiation"][0],
-        "direct_normal_irradiance": hourly["direct_normal_irradiance"][0],
+        "wet_bulb": wet_bulb_list[1] if wet_bulb_list else None,
+        "direct_radiation": direct_rad_list[1] if direct_rad_list else None,
+        "diffuse_radiation": diffuse_rad_list[1] if diffuse_rad_list else None,
+        "direct_normal_irradiance": dni_list[1] if dni_list else None,
+        "time_stamp": ts,
  
     }
+ 
+ 
  
  
 
