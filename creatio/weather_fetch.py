@@ -112,6 +112,7 @@ async def fetch_weather_for(lat: float, lon: float, retries: int = WEATHER_API_R
         "current": "temperature_2m,relative_humidity_2m,wind_speed_10m,dew_point_2m,surface_pressure,shortwave_radiation",
         "hourly": "wet_bulb_temperature_2m,direct_radiation,diffuse_radiation,direct_normal_irradiance",
         "forecast_days": 1,
+        "wind_speed_unit": "ms",
     }
     
     last_error = None

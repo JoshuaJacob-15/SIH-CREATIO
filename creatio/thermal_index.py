@@ -129,9 +129,9 @@ def black_globe_temperature(
     
     logger.debug(f"Globe temp calc: Ta={Ta}°C, Td={Td}°C, S={S}W/m², z={z}rad, P={P}hPa, u={u}m/s")
     
-    # Convert wind speed: m/s to m/hour
-    u_m_hour = u * 1000
-    logger.debug(f"Wind speed: {u} km/hour = {u_m_hour} m/hour")
+    # Convert wind speed from m/s to m/hour for the globe correlation.
+    u_m_hour = u * 3600
+    logger.debug(f"Wind speed: {u} m/s = {u_m_hour} m/hour")
     
     # Stefan-Boltzmann constant
     sigma = 5.67e-8  # W/(m²·K⁴)
@@ -346,7 +346,7 @@ def calculate_utci(
     result = utci(
         tdb=Ta,
         tr=Tmrt,
-        v=wind_speed*1000/3600,  # Converting from km/h to m/s
+        v=wind_speed,
         rh=RH,
         round_output=False,
     )
@@ -394,8 +394,7 @@ def calculate_mrt_standard(
     
     logger.debug(f"MRT calc: Tg={Tg}°C, Ta={Ta}°C, WS={wind_speed}m/s")
     
-    # Convert wind speed: km/h to m/s for correlation
-    wind_speed_corrected = wind_speed * 1000 / 3600
+    wind_speed_corrected = wind_speed
     
     # Stefan-Boltzmann constant
     sigma = 5.67e-8
