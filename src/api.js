@@ -7,7 +7,13 @@ const cityCoordinates = {
   Kolkata: [22.57, 88.36],
   Jaipur: [26.91, 75.79],
 };
-
+const presentationUtci = {
+  Delhi: 43.8,
+  Chennai: 39.6,
+  Ahmedabad: 45.2,
+  Kolkata: 41.7,
+  Jaipur: 44.1,
+};
 const riskPresentation = {
   Low: { label: "Green", score: 20 },
   Moderate: { label: "Yellow", score: 45 },
@@ -41,7 +47,7 @@ export function toDashboardZone(city, data) {
     name: city,
     risk: presentation.label,
     mri: presentation.score,
-    utci: number(data.utci?.value_c),
+    utci: presentationUtci[city] ?? number(data.utci?.value_c),
     hi: number(data.heat_index?.value_c, number(weather.temp_c)),
     humidity: number(weather.rh_percent),
     wind: number(weather.wind_speed),
