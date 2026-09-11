@@ -113,6 +113,7 @@ async def fetch_weather_for(lat: float, lon: float, retries: int = WEATHER_API_R
         "hourly": "wet_bulb_temperature_2m,direct_radiation,diffuse_radiation,direct_normal_irradiance",
         "forecast_days": 1,
         "wind_speed_unit": "ms",
+        "timezone": "Asia/Kolkata",
     }
     
     last_error = None
@@ -132,17 +133,27 @@ async def fetch_weather_for(lat: float, lon: float, retries: int = WEATHER_API_R
             data = payload.get("current", {})
             hourly = payload.get("hourly", {})
             
-            # Extract hourly data (use index 1 for current+1 hour)
-            wet_bulb_list = hourly.get("wet_bulb_temperature_2m", [])
-            direct_rad_list = hourly.get("direct_radiation", [])
-            diffuse_rad_list = hourly.get("diffuse_radiation", [])
-            dni_list = hourly.get("direct_normal_irradiance", [])
-            
-            # Safely get index 1, fallback to None
-            wet_bulb = wet_bulb_list[1] if len(wet_bulb_list) > 1 else None
-            direct_rad = direct_rad_list[1] if len(direct_rad_list) > 1 else None
-            diffuse_rad = diffuse_rad_list[1] if len(diffuse_rad_list) > 1 else None
-            dni = dni_list[1] if len(dni_list) > 1 else None
+            # Align hourly radiation with the hour of the current observation.
+            # Using a fixed index (for example, index 1) combines the current
+            # temperature with radiation from a different hour.
+            observation_time = data.get("time")
+            observation_hour = (
+                f"{observation_time[:13]}:00" if observation_time else None
+            )
+            hourly_times = hourly.get("time", [])
+            try:
+                hourly_index = hourly_times.index(observation_hour)
+            except ValueError:
+                hourly_index = 0
+
+            def hourly_value(field: str) -> Optional[float]:
+                values = hourly.get(field, [])
+                return values[hourly_index] if hourly_index < len(values) else None
+
+            wet_bulb = hourly_value("wet_bulb_temperature_2m")
+            direct_rad = hourly_value("direct_radiation")
+            diffuse_rad = hourly_value("diffuse_radiation")
+            dni = hourly_value("direct_normal_irradiance")
             
             # Validate critical fields
             temp = data.get("temperature_2m")
@@ -164,7 +175,11 @@ async def fetch_weather_for(lat: float, lon: float, retries: int = WEATHER_API_R
                 "direct_radiation": float(direct_rad) if direct_rad is not None else None,
                 "diffuse_radiation": float(diffuse_rad) if diffuse_rad is not None else None,
                 "direct_normal_irradiance": float(dni) if dni is not None else None,
-                "time_stamp": get_formatted_timestamp(),
+                "time_stamp": (
+                    observation_time.replace("T", " ")
+                    if observation_time
+                    else get_formatted_timestamp()
+                ),
             }
             
             logger.debug(f"Weather dict: {weather_dict}")

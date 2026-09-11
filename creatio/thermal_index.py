@@ -107,12 +107,12 @@ def black_globe_temperature(
     absorbs solar radiation and thermal radiation from surroundings.
     
     Parameters:
-        u: Wind speed in m/h
+        u: Wind speed in m/s
         Ta: Air temperature in °C
         Td: Dew point in °C
         S: Solar irradiance (shortwave) in W/m²
-        fdb: Direct beam radiation in W/m²
-        fdif: Diffuse radiation in W/m²
+        fdb: Direct-beam fraction of shortwave radiation (0–1)
+        fdif: Diffuse fraction of shortwave radiation (0–1)
         z: Solar zenith angle in radians
         P: Barometric pressure in hPa
     
@@ -341,6 +341,11 @@ def calculate_utci(
         logger.warning(f"Relative humidity {RH}% is outside valid range")
     if wind_speed < 0:
         logger.warning(f"Wind speed {wind_speed} m/s is negative")
+    if not -30 <= Tmrt - Ta <= 70:
+        raise ValueError(
+            "UTCI requires mean radiant temperature to be between "
+            "30°C below and 70°C above air temperature."
+        )
     
     # Call pythermalcomfort library
     result = utci(
@@ -352,6 +357,8 @@ def calculate_utci(
     )
     
     utci_value = float(result.utci)
+    if not math.isfinite(utci_value):
+        raise ValueError("UTCI calculation returned a non-finite value.")
     stress_category = result.stress_category
     
     logger.debug(f"UTCI result: {utci_value:.2f}°C ({stress_category})")

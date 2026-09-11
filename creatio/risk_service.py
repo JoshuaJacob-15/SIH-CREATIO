@@ -771,13 +771,17 @@ def calculate_risk(city: str) -> dict:
         
         if all(value is not None for value in required_globe_values):
             try:
+                # The black-globe model takes direct and diffuse radiation as
+                # fractions of global shortwave radiation, not W/m² values.
+                direct_fraction = min(max(solar_dir / solar, 0.0), 1.0)
+                diffuse_fraction = min(max(solar_dif / solar, 0.0), 1.0)
                 globe_temperature = black_globe_temperature(
                     u=wind_speed,
                     Ta=temp_c,
                     Td=dew_point,
                     S=solar,
-                    fdb=solar_dir,
-                    fdif=solar_dif,
+                    fdb=direct_fraction,
+                    fdif=diffuse_fraction,
                     z=z_angle,
                     P=pressure,
                 )
