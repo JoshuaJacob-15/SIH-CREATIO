@@ -16,8 +16,13 @@ const riskPresentation = {
   Extreme: { label: "Red", score: 95 },
 };
 
-const number = (value, fallback = 0) =>
-  Number.isFinite(Number(value)) ? Number(value) : fallback;
+const number = (value, fallback = null) =>
+  value !== null &&
+  value !== undefined &&
+  value !== "" &&
+  Number.isFinite(Number(value))
+    ? Number(value)
+    : fallback;
 
 /** Convert the backend's city-risk response into the dashboard's display model. */
 export function toDashboardZone(city, data) {
@@ -36,7 +41,7 @@ export function toDashboardZone(city, data) {
     name: city,
     risk: presentation.label,
     mri: presentation.score,
-    utci: number(data.utci?.value_c, number(weather.temp_c)),
+    utci: number(data.utci?.value_c),
     hi: number(data.heat_index?.value_c, number(weather.temp_c)),
     humidity: number(weather.rh_percent),
     wind: number(weather.wind_speed),
