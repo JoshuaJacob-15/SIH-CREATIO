@@ -354,3 +354,13 @@ This backend is currently structured for local development and hackathon demonst
 
 Repository:
 https://github.com/JoshuaJacob-15/SIH-CREATIO
+Creatio Frontend — Heatwave Early Warning System Dashboard
+Frontend dashboard for the SIH-CREATIO project. It is a React + Vite single-page application that visualizes real-time heat-stress risk across Indian cities, using data from the Creatio backend API (with a bundled demo dataset as a fallback).
+Features
+	•	Fetches live heat-risk data from the Creatio backend and falls back to demo data if the API is unavailable.
+	•	Overview tab — key stats (current UTCI, Mortality Risk Index, high-risk city count, healthcare capacity), an interactive map, and a searchable city risk list.
+	•	Risk map tab — Leaflet map with city markers colored by risk, vulnerability, or healthcare capacity layer, plus healthcare facility markers.
+	•	Forecast tab — 3–5 day heat risk forecast per city, shown as cards and a Mortality Risk Index trend chart.
+	•	Alert centre tab — compose and "send" public health advisories to target zones across SMS/WhatsApp/Dashboard channels (demo), with alert history.
+	•	Analytics tab — risk distribution bar chart and headline city indicators, computed from live data where available.
+Architecture
