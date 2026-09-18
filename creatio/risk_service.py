@@ -92,6 +92,7 @@ CITY_TIMEZONES = {
     "Ahmedabad": "Asia/Kolkata",
     "Kolkata": "Asia/Kolkata",
     "Jaipur": "Asia/Kolkata",
+    "New York": "America/New_York",
 }
 
 
@@ -139,6 +140,14 @@ CITY_VULNERABILITY_FACTORS = {
         "green_cover_pct": 0.14,
         "population_density": 5800,
         "healthcare_capacity": 0.71,
+    },
+    "New York": {
+        "elderly_pct": 0.17,
+        "informal_housing_pct": 0.10,
+        "outdoor_worker_pct": 0.12,
+        "green_cover_pct": 0.27,
+        "population_density": 11300,
+        "healthcare_capacity": 0.80,
     },
 }
 
