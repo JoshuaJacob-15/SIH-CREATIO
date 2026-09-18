@@ -243,6 +243,23 @@ function App() {
 
   // Detailed metrics panel for the currently selected city.
   function Details() {
+    // Small helper: renders a value if present, otherwise "Unavailable" — used for
+    // the backend-sourced fields (WBGT, radiation, etc.) that only exist in live mode.
+    const fmt = (value, unit = "") =>
+      value === null || value === undefined ? "Unavailable" : value.toFixed(1) + unit;
+
+    const hasThermalExtras =
+      selected.wbgt != null || selected.blackGlobeTemp != null || selected.mrt != null;
+    const hasRadiation =
+      selected.radiation &&
+      (selected.radiation.shortwave != null ||
+        selected.radiation.direct != null ||
+        selected.radiation.diffuse != null ||
+        selected.radiation.directNormal != null);
+    const hasVulnerabilityFactors =
+      selected.vulnerabilityFactors &&
+      Object.values(selected.vulnerabilityFactors).some((v) => v != null);
+
     return (
       <section className="card panel">
         <div className="panel-head">
@@ -278,9 +295,127 @@ function App() {
           />
         </div>
 
+        {/* Extra thermal indicators from the backend's thermal_index.py pipeline. */}
+        {hasThermalExtras && (
+          <>
+            <div className="section-label">Thermal indicators</div>
+            <div className="metrics">
+              <Metric label="WBGT" value={fmt(selected.wbgt, "°C")} unit="wet-bulb globe temp" />
+              <Metric
+                label="Black Globe Temp"
+                value={fmt(selected.blackGlobeTemp, "°C")}
+                unit="Tg"
+              />
+              <Metric label="MRT" value={fmt(selected.mrt, "°C")} unit="mean radiant temp" />
+            </div>
+          </>
+        )}
+
+        {/* Solar radiation figures, from Open-Meteo via the backend's weather module. */}
+        {hasRadiation && (
+          <>
+            <div className="section-label">Solar radiation</div>
+            <div className="metrics">
+              <Metric
+                label="Shortwave"
+                value={fmt(selected.radiation.shortwave, " W/m²")}
+                unit=""
+              />
+              <Metric label="Direct" value={fmt(selected.radiation.direct, " W/m²")} unit="" />
+              <Metric label="Diffuse" value={fmt(selected.radiation.diffuse, " W/m²")} unit="" />
+              <Metric
+                label="Direct normal"
+                value={fmt(selected.radiation.directNormal, " W/m²")}
+                unit="DNI"
+              />
+            </div>
+          </>
+        )}
+
+        {/* Raw human-health risk score vs. the vulnerability-adjusted score used for MRI. */}
+        {(selected.rawRiskScore != null || selected.adjustedRiskScore != null) && (
+          <>
+            <div className="section-label">Risk scoring</div>
+            <div className="metrics">
+              <Metric
+                label="Raw health risk"
+                value={fmt(selected.rawRiskScore)}
+                unit="before vulnerability adjustment"
+              />
+              <Metric
+                label="Adjusted risk"
+                value={fmt(selected.adjustedRiskScore)}
+                unit="after vulnerability adjustment"
+              />
+            </div>
+          </>
+        )}
+
+        {/* City vulnerability factor breakdown, as configured in the backend's risk_service.py. */}
+        {hasVulnerabilityFactors && (
+          <>
+            <div className="section-label">Vulnerability factors</div>
+            <div className="metrics">
+              <Metric
+                label="Elderly population"
+                value={fmt(
+                  selected.vulnerabilityFactors.elderlyPopulation != null
+                    ? selected.vulnerabilityFactors.elderlyPopulation * 100
+                    : null,
+                  "%"
+                )}
+                unit=""
+              />
+              <Metric
+                label="Informal housing"
+                value={fmt(
+                  selected.vulnerabilityFactors.informalHousing != null
+                    ? selected.vulnerabilityFactors.informalHousing * 100
+                    : null,
+                  "%"
+                )}
+                unit=""
+              />
+              <Metric
+                label="Outdoor workers"
+                value={fmt(
+                  selected.vulnerabilityFactors.outdoorWorkers != null
+                    ? selected.vulnerabilityFactors.outdoorWorkers * 100
+                    : null,
+                  "%"
+                )}
+                unit=""
+              />
+              <Metric
+                label="Green cover"
+                value={fmt(
+                  selected.vulnerabilityFactors.greenCover != null
+                    ? selected.vulnerabilityFactors.greenCover * 100
+                    : null,
+                  "%"
+                )}
+                unit=""
+              />
+              <Metric
+                label="Population density"
+                value={fmt(selected.vulnerabilityFactors.density)}
+                unit="factor"
+              />
+            </div>
+          </>
+        )}
+
         <div className="advisory">
-          <b>Recommended action</b>
-          <p>{selected.advisory}</p>
+          <b>Recommended action{selected.recommendedActions?.length > 1 ? "s" : ""}</b>
+          {selected.recommendedActions && selected.recommendedActions.length > 1 ? (
+            <ul className="advisory-list">
+              {selected.recommendedActions.map((action, i) => (
+                <li key={i}>{action}</li>
+              ))}
+            </ul>
+          ) : (
+            <p>{selected.advisory}</p>
+          )}
         </div>
       </section>
     );
