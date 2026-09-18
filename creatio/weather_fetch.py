@@ -32,6 +32,7 @@ LOCATIONS: Dict[str, Tuple[float, float]] = {
     "Ahmedabad": (23.02, 72.57),
     "Kolkata": (22.57, 88.36),
     "Jaipur": (26.91, 75.79),
+    "New York": (40.71, -74.01),
 }
 
 # In-memory weather cache
