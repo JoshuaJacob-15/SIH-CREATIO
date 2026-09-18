@@ -42,10 +42,38 @@ export function toDashboardZone(city, data) {
   const actions = data.human_health_risk?.recommended_actions || [];
   const [lat, lng] = cityCoordinates[city] || [20.5937, 78.9629];
 
+  // --- Additional thermal indicators from the backend's thermal_index.py pipeline ---
+  // These follow the same `{ value_c }` shape as heat_index / utci above. If your
+  // backend uses different key names for any of these, adjust the paths below to match.
+  const wbgt = number(data.wbgt?.value_c);
+  const blackGlobeTemp = number(data.black_globe_temp?.value_c);
+  const mrt = number(data.mrt?.value_c);
+
+  // --- Solar radiation (from Open-Meteo, surfaced via the weather object) ---
+  const radiation = {
+    shortwave: number(weather.shortwave_radiation),
+    direct: number(weather.direct_radiation),
+    diffuse: number(weather.diffuse_radiation),
+    directNormal: number(weather.direct_normal_irradiance),
+  };
+
+  // --- Raw vs. vulnerability-adjusted risk, plus the full vulnerability factor breakdown ---
+  const rawRiskScore = number(data.human_health_risk?.score);
+  const adjustedRiskScore = number(data.final_risk?.score, presentation.score);
+  const vulnerabilityFactors = {
+    elderlyPopulation: number(vulnerability.factors?.elderly_population),
+    informalHousing: number(vulnerability.factors?.informal_housing),
+    outdoorWorkers: number(vulnerability.factors?.outdoor_workers),
+    greenCover: number(vulnerability.factors?.green_cover),
+    density: number(vulnerability.factors?.population_density),
+    healthcareCapacity: number(vulnerability.factors?.healthcare_capacity),
+  };
+
   return {
     id: city.toLowerCase(),
     name: city,
     risk: presentation.label,
+    riskLabel: data.final_risk?.vulnerability_adjusted_risk || null,
     mri: presentation.score,
     utci: presentationUtci[city] ?? number(data.utci?.value_c),
     hi: number(data.heat_index?.value_c, number(weather.temp_c)),
@@ -56,6 +84,16 @@ export function toDashboardZone(city, data) {
     lat,
     lng,
     advisory: actions[0] || "Continue monitoring heat conditions.",
+
+    // Newly surfaced backend data:
+    wbgt,
+    blackGlobeTemp,
+    mrt,
+    radiation,
+    rawRiskScore,
+    adjustedRiskScore,
+    vulnerabilityFactors,
+    recommendedActions: actions,
   };
 }
 
