@@ -15,6 +15,8 @@ Enhancements:
 - Input validation with bounds checking
 - Unit conversions documented
 - Exception handling with meaningful errors
+- Night-time support: black globe temperature no longer fails when the sun is
+  below the horizon (the solar term is simply zero)
 """
 
 import math
@@ -110,7 +112,7 @@ def black_globe_temperature(
         u: Wind speed in m/s
         Ta: Air temperature in °C
         Td: Dew point in °C
-        S: Solar irradiance (shortwave) in W/m²
+        S: Solar irradiance (shortwave) in W/m² (None or 0 is treated as no sun)
         fdb: Direct-beam fraction of shortwave radiation (0–1)
         fdif: Diffuse fraction of shortwave radiation (0–1)
         z: Solar zenith angle in radians
@@ -119,8 +121,11 @@ def black_globe_temperature(
     Returns:
         Black globe temperature in °C
     
-    Raises:
-        ValueError: If solar zenith angle indicates sun below horizon (nighttime)
+    Notes:
+        At night (sun below the horizon) or when no solar radiation is
+        available, the solar heating term is set to zero, so the globe
+        temperature is driven only by air temperature, wind and the
+        thermal radiation of the surroundings.
     
     References:
         ISO 7726: Ergonomics of the thermal environment — Instruments and methods
@@ -150,20 +155,20 @@ def black_globe_temperature(
     # Atmospheric thermal emissivity (dimensionless)
     epsilon_a = 0.575 * (ea ** (1.0 / 7.0))
     
-    # Solar geometry check: cos(z) > 0 means sun above horizon
+    # Solar geometry: cos(z) > 0 means the sun is above the horizon
     cos_z = math.cos(z)
     
-    if cos_z <= 0:
-        raise ValueError(
-            f"Solar zenith angle {math.degrees(z):.1f}° indicates sun below horizon (nighttime). "
-            f"Cannot calculate black globe temperature."
-        )
+    # Night, or no solar radiation available: no solar heating of the globe.
+    # (Previously this case raised an error, which made WBGT, MRT and UTCI
+    # come out as null for every city at night.)
+    if cos_z > 0 and S:
+        solar_term = S * (fdb / (4 * sigma * cos_z) + (1.2 / sigma) * fdif)
+    else:
+        solar_term = 0.0
+        logger.debug("No solar heating (night or no radiation data); solar term = 0")
     
     # Calculate intermediate term B (radiation balance)
-    B = (
-        S * (fdb / (4 * sigma * cos_z) + (1.2 / sigma) * fdif)
-        + epsilon_a * ((Ta + 273.15) ** 4)
-    )
+    B = solar_term + epsilon_a * ((Ta + 273.15) ** 4)
     
     # Calculate intermediate term C (convection)
     C = (h * (u_m_hour ** 0.58)) / (5.3865e-8)
@@ -347,19 +352,32 @@ def calculate_utci(
             "30°C below and 70°C above air temperature."
         )
     
-    # Call pythermalcomfort library
-    result = utci(
-        tdb=Ta,
-        tr=Tmrt,
-        v=wind_speed,
-        rh=RH,
-        round_output=False,
-    )
+    # Call pythermalcomfort. Newer versions (3.x) return an object with
+    # .utci and .stress_category; older versions (2.x) return a float, or a
+    # dict when return_stress_category=True. Support both.
+    try:
+        result = utci(
+            tdb=Ta,
+            tr=Tmrt,
+            v=wind_speed,
+            rh=RH,
+            round_output=False,
+        )
+        utci_value = float(result.utci)
+        stress_category = result.stress_category
+    except (TypeError, AttributeError):
+        result = utci(
+            tdb=Ta,
+            tr=Tmrt,
+            v=wind_speed,
+            rh=RH,
+            return_stress_category=True,
+        )
+        utci_value = float(result["utci"])
+        stress_category = result["stress_category"]
     
-    utci_value = float(result.utci)
     if not math.isfinite(utci_value):
         raise ValueError("UTCI calculation returned a non-finite value.")
-    stress_category = result.stress_category
     
     logger.debug(f"UTCI result: {utci_value:.2f}°C ({stress_category})")
     return round(utci_value, 2), stress_category
