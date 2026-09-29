@@ -7,6 +7,9 @@ const cityCoordinates = {
   Kolkata: [22.57, 88.36],
   Jaipur: [26.91, 75.79],
 };
+
+// Fallback demo values, used ONLY when the backend sends no UTCI.
+// Remove this once thermal_index.py returns real UTCI values.
 const presentationUtci = {
   Delhi: 43.8,
   Chennai: 39.6,
@@ -14,6 +17,7 @@ const presentationUtci = {
   Kolkata: 41.7,
   Jaipur: 44.1,
 };
+
 const riskPresentation = {
   Low: { label: "Green", score: 20 },
   Moderate: { label: "Yellow", score: 45 },
@@ -38,35 +42,41 @@ export function toDashboardZone(city, data) {
   };
   const weather = data.weather || {};
   const vulnerability = data.vulnerability || {};
-  const healthcare = number(vulnerability.factors?.healthcare_capacity, 0.7) * 100;
+  const factors = vulnerability.factors || {};
+  const healthcare = number(factors.healthcare_capacity, 0.7) * 100;
   const actions = data.human_health_risk?.recommended_actions || [];
   const [lat, lng] = cityCoordinates[city] || [20.5937, 78.9629];
 
-  // --- Additional thermal indicators from the backend's thermal_index.py pipeline ---
-  // These follow the same `{ value_c }` shape as heat_index / utci above. If your
-  // backend uses different key names for any of these, adjust the paths below to match.
+  // Thermal indicators (backend keys: wbgt, black_globe_temperature, mean_radiant_temperature, utci)
   const wbgt = number(data.wbgt?.value_c);
-  const blackGlobeTemp = number(data.black_globe_temp?.value_c);
-  const mrt = number(data.mrt?.value_c);
+  const blackGlobeTemp = number(data.black_globe_temperature?.value_c);
+  const mrt = number(data.mean_radiant_temperature?.value_c);
+  const liveUtci = number(data.utci?.value_c);
 
-  // --- Solar radiation (from Open-Meteo, surfaced via the weather object) ---
+  // Solar radiation (backend sends solar_radiation, not shortwave_radiation)
   const radiation = {
-    shortwave: number(weather.shortwave_radiation),
+    shortwave: number(weather.solar_radiation),
     direct: number(weather.direct_radiation),
     diffuse: number(weather.diffuse_radiation),
     directNormal: number(weather.direct_normal_irradiance),
   };
 
-  // --- Raw vs. vulnerability-adjusted risk, plus the full vulnerability factor breakdown ---
-  const rawRiskScore = number(data.human_health_risk?.score);
-  const adjustedRiskScore = number(data.final_risk?.score, presentation.score);
+  // The backend has no single numeric health-risk score, so add up its 5 sub-scores.
+  const rawRiskScore = Object.values(data.human_health_risk?.scores || {}).reduce(
+    (sum, s) => sum + (number(s, 0)),
+    0
+  );
+  // The backend has no numeric final score either, so use the level-based one.
+  const adjustedRiskScore = presentation.score;
+
+  // Backend factor keys end in _pct (population_density and healthcare_capacity have no suffix).
   const vulnerabilityFactors = {
-    elderlyPopulation: number(vulnerability.factors?.elderly_population),
-    informalHousing: number(vulnerability.factors?.informal_housing),
-    outdoorWorkers: number(vulnerability.factors?.outdoor_workers),
-    greenCover: number(vulnerability.factors?.green_cover),
-    density: number(vulnerability.factors?.population_density),
-    healthcareCapacity: number(vulnerability.factors?.healthcare_capacity),
+    elderlyPopulation: number(factors.elderly_pct),
+    informalHousing: number(factors.informal_housing_pct),
+    outdoorWorkers: number(factors.outdoor_worker_pct),
+    greenCover: number(factors.green_cover_pct),
+    density: number(factors.population_density),
+    healthcareCapacity: number(factors.healthcare_capacity),
   };
 
   return {
@@ -75,17 +85,16 @@ export function toDashboardZone(city, data) {
     risk: presentation.label,
     riskLabel: data.final_risk?.vulnerability_adjusted_risk || null,
     mri: presentation.score,
-    utci: presentationUtci[city] ?? number(data.utci?.value_c),
+    utci: liveUtci ?? presentationUtci[city] ?? null,
     hi: number(data.heat_index?.value_c, number(weather.temp_c)),
     humidity: number(weather.rh_percent),
     wind: number(weather.wind_speed),
-    vulnerable: Math.round(number(vulnerability.score) * 100),
+    vulnerable: Math.round(number(vulnerability.score, 0) * 100),
     healthcare: Math.round(healthcare),
     lat,
     lng,
     advisory: actions[0] || "Continue monitoring heat conditions.",
 
-    // Newly surfaced backend data:
     wbgt,
     blackGlobeTemp,
     mrt,
@@ -105,6 +114,6 @@ export async function getLiveRiskZones(signal) {
   }
   const payload = await response.json();
   return Object.entries(payload.results || {})
-    .filter(([, result]) => !result.error)
+    .filter(([city, result]) => !result.error && cityCoordinates[city]) // skips cities with no map coordinates (e.g. New York)
     .map(([city, result]) => toDashboardZone(city, result));
 }
