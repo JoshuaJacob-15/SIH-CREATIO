@@ -27,12 +27,12 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------
 
 LOCATIONS: Dict[str, Tuple[float, float]] = {
+    "New York City": (40.71, -74.01),
     "Delhi": (28.61, 77.21),
     "Chennai": (13.08, 80.27),
     "Ahmedabad": (23.02, 72.57),
     "Kolkata": (22.57, 88.36),
     "Jaipur": (26.91, 75.79),
-    "New York": (40.71, -74.01),
 }
 
 # In-memory weather cache
@@ -50,14 +50,22 @@ WEATHER_API_URL = "https://api.open-meteo.com/v1/forecast"
 
 def get_formatted_timestamp() -> str:
     """
-    Get current local date and time as ISO format string.
-    
+    Get the current UTC date and time as a naive-looking ISO format string.
+
+    IMPORTANT: This is UTC, not server-local time. Solar position calculations
+    (calculate_solar_zenith) need an unambiguous absolute instant in time —
+    previously this returned the server's local clock, which was then
+    incorrectly *relabeled* as "Asia/Kolkata" downstream. On any server not
+    physically running in IST, that silently shifted solar-position math by
+    hours. Returning true UTC here (and localizing as UTC downstream) fixes
+    that regardless of where the process runs.
+
     Returns:
-        String in format "YYYY-MM-DD HH:MM:SS"
+        String in format "YYYY-MM-DD HH:MM:SS", representing UTC.
     """
-    current_time = datetime.datetime.now()
+    current_time = datetime.datetime.now(datetime.timezone.utc)
     formatted_timestamp = current_time.strftime("%Y-%m-%d %H:%M:%S")
-    logger.debug(f"Generated timestamp: {formatted_timestamp}")
+    logger.debug(f"Generated UTC timestamp: {formatted_timestamp}")
     return formatted_timestamp
 
 
@@ -89,7 +97,8 @@ async def fetch_weather_for(lat: float, lon: float, retries: int = WEATHER_API_R
         "direct_radiation": float or None,        # Direct radiation in W/m²
         "diffuse_radiation": float or None,       # Diffuse radiation in W/m²
         "direct_normal_irradiance": float or None,# Direct normal irradiance in W/m²
-        "time_stamp": str,                        # Timestamp in "YYYY-MM-DD HH:MM:SS"
+        "time_stamp": str,                        # UTC timestamp "YYYY-MM-DD HH:MM:SS" (used for solar math — do not treat as local time)
+        "local_time_ist": str,                    # Same instant in IST, for display only
     }
     
     Args:
@@ -113,8 +122,6 @@ async def fetch_weather_for(lat: float, lon: float, retries: int = WEATHER_API_R
         "current": "temperature_2m,relative_humidity_2m,wind_speed_10m,dew_point_2m,surface_pressure,shortwave_radiation",
         "hourly": "wet_bulb_temperature_2m,direct_radiation,diffuse_radiation,direct_normal_irradiance",
         "forecast_days": 1,
-        "wind_speed_unit": "ms",
-        "timezone": "Asia/Kolkata",
     }
     
     last_error = None
@@ -134,27 +141,45 @@ async def fetch_weather_for(lat: float, lon: float, retries: int = WEATHER_API_R
             data = payload.get("current", {})
             hourly = payload.get("hourly", {})
             
-            # Align hourly radiation with the hour of the current observation.
-            # Using a fixed index (for example, index 1) combines the current
-            # temperature with radiation from a different hour.
-            observation_time = data.get("time")
-            observation_hour = (
-                f"{observation_time[:13]}:00" if observation_time else None
-            )
+            # Extract hourly data, matched to the ACTUAL current UTC hour.
+            #
+            # Open-Meteo always returns a "time" array alongside any hourly
+            # variables you request, even if you didn't explicitly ask for
+            # "time" in the hourly param string. Each entry looks like
+            # "2026-09-11T05:00", one per forecast hour.
+            #
+            # Previously this always read index [1], which is simply the
+            # SECOND hour in the forecast window (typically ~00:xx-01:xx
+            # UTC, whenever the API run started) — not whatever hour it
+            # actually is right now. That silently returned stale/wrong
+            # direct_radiation, diffuse_radiation, direct_normal_irradiance,
+            # and wet_bulb_temperature_2m values any time "now" wasn't
+            # coincidentally that second hour (e.g. reporting sunrise-like
+            # near-zero direct radiation at 11 AM local time). We now look
+            # up the hourly index whose timestamp matches the current UTC
+            # hour, and fall back to index 1 only if that lookup fails.
             hourly_times = hourly.get("time", [])
+            now_hour_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:00")
+
             try:
-                hourly_index = hourly_times.index(observation_hour)
+                idx = hourly_times.index(now_hour_str)
             except ValueError:
-                hourly_index = 0
+                logger.warning(
+                    f"Couldcd not find current hour {now_hour_str} in hourly 'time' array "
+                    f"(got {hourly_times[:3]}...); falling back to index 1"
+                )
+                idx = 1
 
-            def hourly_value(field: str) -> Optional[float]:
-                values = hourly.get(field, [])
-                return values[hourly_index] if hourly_index < len(values) else None
-
-            wet_bulb = hourly_value("wet_bulb_temperature_2m")
-            direct_rad = hourly_value("direct_radiation")
-            diffuse_rad = hourly_value("diffuse_radiation")
-            dni = hourly_value("direct_normal_irradiance")
+            wet_bulb_list = hourly.get("wet_bulb_temperature_2m", [])
+            direct_rad_list = hourly.get("direct_radiation", [])
+            diffuse_rad_list = hourly.get("diffuse_radiation", [])
+            dni_list = hourly.get("direct_normal_irradiance", [])
+            
+            # Safely get the matched index, fallback to None
+            wet_bulb = wet_bulb_list[idx] if len(wet_bulb_list) > idx else None
+            direct_rad = direct_rad_list[idx] if len(direct_rad_list) > idx else None
+            diffuse_rad = diffuse_rad_list[idx] if len(diffuse_rad_list) > idx else None
+            dni = dni_list[idx] if len(dni_list) > idx else None
             
             # Validate critical fields
             temp = data.get("temperature_2m")
@@ -165,22 +190,37 @@ async def fetch_weather_for(lat: float, lon: float, retries: int = WEATHER_API_R
                 raise ValueError(f"Missing critical weather fields: T={temp}, RH={rh}, WS={wind}")
             
             # Build weather dict
+            #
+            # NOTE: these fields previously used a truthy check
+            # (`if data.get(x) else None`), which silently discarded
+            # legitimate zero values (e.g. 0 W/m2 solar radiation at night)
+            # and made the intended defaults unreachable (a missing key
+            # always fell through to None instead of the default). Using
+            # `is not None` fixes both problems.
+            dew_point_raw = data.get("dew_point_2m")
+            pressure_raw = data.get("surface_pressure")
+            solar_raw = data.get("shortwave_radiation")
+
             weather_dict = {
                 "temp_c": float(temp),
                 "rh_percent": float(rh),
                 "wind_speed": float(wind),
-                "dew_point": float(data.get("dew_point_2m", 0)) if data.get("dew_point_2m") else None,
-                "pressure_hpa": float(data.get("surface_pressure", 1013)) if data.get("surface_pressure") else None,
-                "solar_radiation": float(data.get("shortwave_radiation", 0)) if data.get("shortwave_radiation") else None,
+                "dew_point": float(dew_point_raw) if dew_point_raw is not None else None,
+                "pressure_hpa": float(pressure_raw) if pressure_raw is not None else 1013.0,
+                "solar_radiation": float(solar_raw) if solar_raw is not None else 0.0,
                 "wet_bulb": float(wet_bulb) if wet_bulb is not None else None,
                 "direct_radiation": float(direct_rad) if direct_rad is not None else None,
                 "diffuse_radiation": float(diffuse_rad) if diffuse_rad is not None else None,
                 "direct_normal_irradiance": float(dni) if dni is not None else None,
-                "time_stamp": (
-                    observation_time.replace("T", " ")
-                    if observation_time
-                    else get_formatted_timestamp()
-                ),
+                # UTC — this is what calculate_solar_zenith() must be given.
+                # Do not change this to local time; see get_formatted_timestamp().
+                "time_stamp": get_formatted_timestamp(),
+                # Same instant, shown in IST purely for humans reading the
+                # API response / frontend. Not used in any calculation.
+                "local_time_ist": (
+                    datetime.datetime.now(datetime.timezone.utc)
+                    + datetime.timedelta(hours=5, minutes=30)
+                ).strftime("%Y-%m-%d %H:%M:%S"),
             }
             
             logger.debug(f"Weather dict: {weather_dict}")

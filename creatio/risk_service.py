@@ -27,6 +27,7 @@ Improvements:
 """
 
 import logging
+import math
 import time
 import hashlib
 from typing import Optional, Tuple, List, Dict
@@ -44,6 +45,7 @@ from thermal_index import (
     calculate_utci,
     calculate_mrt_standard,
     calculate_solar_zenith,
+    split_radiation,
 )
 
 # =========================================================
@@ -92,7 +94,6 @@ CITY_TIMEZONES = {
     "Ahmedabad": "Asia/Kolkata",
     "Kolkata": "Asia/Kolkata",
     "Jaipur": "Asia/Kolkata",
-    "New York": "America/New_York",
 }
 
 
@@ -141,14 +142,6 @@ CITY_VULNERABILITY_FACTORS = {
         "population_density": 5800,
         "healthcare_capacity": 0.71,
     },
-    "New York": {
-        "elderly_pct": 0.17,
-        "informal_housing_pct": 0.10,
-        "outdoor_worker_pct": 0.12,
-        "green_cover_pct": 0.27,
-        "population_density": 11300,
-        "healthcare_capacity": 0.80,
-    },
 }
 
 FACTOR_WEIGHTS = {
@@ -174,7 +167,7 @@ class RiskCache:
     @staticmethod
     def hash_weather(weather: dict) -> str:
         """Hash weather to detect if recalculation is needed."""
-        key_fields = ("temp_c", "rh_percent", "wind_speed", "solar_radiation")
+        key_fields = ("temp_c", "rh_percent", "wind_speed", "dew_point", "pressure_hpa", "solar_radiation", "direct_radiation", "diffuse_radiation", "direct_normal_irradiance", "wet_bulb", "time_stamp")
         values = tuple(weather.get(k, 0) for k in key_fields)
         hash_str = hashlib.sha256(str(values).encode()).hexdigest()
         return hash_str
@@ -203,35 +196,56 @@ risk_cache = RiskCache(ttl_seconds=300)
 # SOLAR RADIATION EXTRACTION (ROBUST)
 # =========================================================
 
-def extract_solar_radiation(weather: dict) -> Tuple[Optional[float], str]:
+def extract_solar_radiation(weather: dict) -> Tuple[Optional[float], float, float, str]:
     """
-    Extract solar radiation with fallback chain and unit validation.
-    
+    Extract solar radiation and convert direct/diffuse radiation
+    into the fractions required by black_globe_temperature().
+
     Returns:
-        (value_in_w_per_m2, field_name_used) or (None, "unknown")
+        solar_radiation : total horizontal radiation (W/m²)
+        fdb             : direct-beam fraction [0, 1]
+        fdif            : diffuse fraction [0, 1]
+        field_name      : source used
     """
-    candidates = [
-        ("direct_normal_irradiance", weather.get("direct_normal_irradiance")),
-        ("solar_radiation", weather.get("solar_radiation")),
-        ("shortwave_radiation", weather.get("shortwave_radiation")),
-    ]
-    
-    for field_name, value in candidates:
-        try:
-            if value is not None:
-                value_float = float(value)
-                # W/m² is typically 0-1500 during day, 0 at night
-                if 0 <= value_float <= 1500:
-                    logger.info(f"Using {field_name} = {value_float} W/m²")
-                    return value_float, field_name
-                else:
-                    logger.warning(f"Solar radiation {field_name}={value_float} out of bounds (0-1500)")
-        except (TypeError, ValueError) as e:
-            logger.debug(f"Could not parse {field_name}: {e}")
-            continue
-    
-    logger.warning(f"No valid solar radiation found in weather keys: {weather.keys()}")
-    return None, "unknown"
+    solar = weather.get("solar_radiation")
+
+    try:
+        if solar is not None:
+            solar = float(solar)
+            if 0 <= solar <= 1500:
+                direct = weather.get("direct_radiation")
+                diffuse = weather.get("diffuse_radiation")
+                try:
+                    direct = float(direct) if direct is not None else 0.0
+                    diffuse = float(diffuse) if diffuse is not None else 0.0
+                except (TypeError, ValueError):
+                    direct, diffuse = 0.0, 0.0
+
+                total = direct + diffuse
+                if total > 0:
+                    fdb = max(0.0, min(1.0, direct / total))
+                    fdif = max(0.0, min(1.0, diffuse / total))
+                    logger.info(f"Solar radiation: GHI={solar:.2f} W/m², fdb={fdb:.3f}, fdif={fdif:.3f}")
+                    return solar, fdb, fdif, "solar_radiation"
+
+                if solar > 0:
+                    return solar, 0.0, 1.0, "solar_radiation"
+                return 0.0, 0.0, 0.0, "solar_radiation"
+    except (TypeError, ValueError) as e:
+        logger.warning(f"Could not parse solar radiation: {e}")
+
+    dni = weather.get("direct_normal_irradiance")
+    try:
+        if dni is not None:
+            dni = float(dni)
+            if 0 <= dni <= 1500:
+                logger.warning(f"GHI unavailable; using DNI fallback: {dni:.2f} W/m²")
+                return dni, 1.0, 0.0, "direct_normal_irradiance"
+    except (TypeError, ValueError) as e:
+        logger.warning(f"Could not parse DNI: {e}")
+
+    logger.warning(f"No valid solar radiation found. Available keys: {list(weather.keys())}")
+    return None, 0.0, 0.0, "unknown"
 
 
 # =========================================================
@@ -683,7 +697,12 @@ def _shift_risk_level(base_risk: str, vulnerability_score: float) -> str:
         return base_risk
     
     base_index = RISK_ORDER.index(base_risk)
-    shift = round(vulnerability_score * MAX_TIER_SHIFT)
+    # NOTE: Python's built-in round() uses round-half-to-even ("banker's
+    # rounding"), so round(0.5) == 0 and round(1.5) == 2. A vulnerability
+    # score of exactly 0.25 (0.25 * MAX_TIER_SHIFT(2) == 0.5) would silently
+    # get NO tier shift under round(), even though the intent is clearly to
+    # round 0.5 up. math.floor(x + 0.5) gives standard round-half-up.
+    shift = math.floor(vulnerability_score * MAX_TIER_SHIFT + 0.5)
     new_index = min(base_index + shift, len(RISK_ORDER) - 1)
     new_risk = RISK_ORDER[new_index]
     
@@ -722,7 +741,16 @@ def calculate_risk(city: str) -> dict:
         
         weather = weather_cache[city]
         logger.debug(f"Weather for {city}: {weather}")
-        
+
+        # ----- 1b. Check risk cache -----
+        # This TTL cache was previously fully implemented (RiskCache class)
+        # but never actually consulted here, so it did nothing and every
+        # request recomputed from scratch. Wiring it in now.
+        weather_hash = risk_cache.hash_weather(weather)
+        cached_result = risk_cache.get_cached(city, weather_hash)
+        if cached_result is not None:
+            return cached_result
+
         # ----- 2. Extract basic weather -----
         temp_c = weather.get("temp_c")
         rh = weather.get("rh_percent")
@@ -742,7 +770,7 @@ def calculate_risk(city: str) -> dict:
         # ----- 3. Extract optional weather fields -----
         dew_point = weather.get("dew_point")
         tw = weather.get("wet_bulb")
-        solar, solar_field = extract_solar_radiation(weather)
+        solar, fdb, fdif, solar_field = extract_solar_radiation(weather)
         solar_dir = weather.get("direct_radiation")
         solar_dif = weather.get("diffuse_radiation")
         pressure = weather.get("pressure_hpa")
@@ -754,12 +782,16 @@ def calculate_risk(city: str) -> dict:
         if city in LOCATIONS and timestamp is not None:
             try:
                 latitude, longitude = LOCATIONS[city]
-                timezone = CITY_TIMEZONES.get(city, "Asia/Kolkata")
+                # `timestamp` comes from weather_fetch.get_formatted_timestamp(),
+                # which is real UTC (see that function's docstring for why
+                # relabeling server-local time as the city's IANA timezone was
+                # a bug). Solar position only needs an unambiguous absolute
+                # instant, so pass "UTC" here to match, not the city timezone.
                 z_angle = calculate_solar_zenith(
                     latitude=latitude,
                     longitude=longitude,
                     timestamp=timestamp,
-                    timezone=timezone,
+                    timezone="UTC",
                 )
                 logger.debug(f"Solar zenith angle: {np.degrees(z_angle):.2f}°")
             except ValueError as e:
@@ -776,21 +808,17 @@ def calculate_risk(city: str) -> dict:
         
         # ----- 6. Black Globe Temperature -----
         globe_temperature: Optional[float] = None
-        required_globe_values = [dew_point, solar, solar_dir, solar_dif, z_angle, pressure]
+        required_globe_values = [dew_point, solar, fdb, fdif, z_angle, pressure]
         
         if all(value is not None for value in required_globe_values):
             try:
-                # The black-globe model takes direct and diffuse radiation as
-                # fractions of global shortwave radiation, not W/m² values.
-                direct_fraction = min(max(solar_dir / solar, 0.0), 1.0)
-                diffuse_fraction = min(max(solar_dif / solar, 0.0), 1.0)
                 globe_temperature = black_globe_temperature(
                     u=wind_speed,
                     Ta=temp_c,
                     Td=dew_point,
                     S=solar,
-                    fdb=direct_fraction,
-                    fdif=diffuse_fraction,
+                    fdb=fdb,
+                    fdif=fdif,
                     z=z_angle,
                     P=pressure,
                 )
@@ -849,8 +877,8 @@ def calculate_risk(city: str) -> dict:
                 utci_value = round(utci_value, 2)
                 logger.info(f"UTCI: {utci_value:.2f}°C ({utci_category})")
             except Exception as e:
-                logger.error(f"Error calculating UTCI: {e}")
-                utci_value = None
+                    logger.exception("UTCI calculation failed")
+                    raise
         
         # ----- 10. Human health risk -----
         human_health_risk = assess_human_health_risk(
@@ -885,6 +913,7 @@ def calculate_risk(city: str) -> dict:
             "city": city,
             "timestamp": datetime.now().isoformat(),
             "weather": weather,
+            "solar_radiation_source": solar_field,
             "solar_zenith_angle": {"value_rad": z_angle, "value_deg": np.degrees(z_angle) if z_angle else None},
             "heat_index": {"value_c": hi},
             "black_globe_temperature": {"value_c": globe_temperature},
@@ -902,6 +931,10 @@ def calculate_risk(city: str) -> dict:
         }
         
         logger.info(f"✓ Risk calculated for {city}: {final_risk_level}")
+
+        # ----- 15. Store in cache -----
+        risk_cache.set_cached(city, weather_hash, result)
+
         return result
     
     except Exception as e:

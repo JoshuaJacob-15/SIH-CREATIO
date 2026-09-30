@@ -27,15 +27,61 @@ Try:
     http://127.0.0.1:8000/health                  <- system status
 """
 
-import logging
+"""
+config.py - Configuration and environment setup
+
+Handles:
+- Numba cache disabling (fixes Windows permission issues)
+- Environment variables
+- API configuration
+"""
+
 import os
+import sys
+
+# =========================================================
+# NUMBA CACHE FIX (Windows Permission Issue)
+# =========================================================
+# On Windows, Numba may fail to write to site-packages
+# Disable caching to avoid FileNotFoundError
+os.environ['NUMBA_CACHE_DIR'] = os.path.join(os.path.expanduser('~'), '.numba_cache')
+os.environ['NUMBA_DISABLE_JIT'] = '0'
+
+# Create cache directory if it doesn't exist
+numba_cache = os.environ['NUMBA_CACHE_DIR']
+if not os.path.exists(numba_cache):
+    os.makedirs(numba_cache, exist_ok=True)
+
+# =========================================================
+# API CONFIGURATION
+# =========================================================
+
+# Open-Meteo API settings
+WEATHER_API_URL = "https://api.open-meteo.com/v1/forecast"
+WEATHER_API_TIMEOUT = 10  # seconds
+WEATHER_API_RETRIES = 3
+
+# Server settings
+SERVER_HOST = "0.0.0.0"
+SERVER_PORT = 8000
+RELOAD = True
+
+# Weather refresh settings
+WEATHER_REFRESH_INTERVAL = 10  # minutes
+RISK_CACHE_TTL = 300  # seconds (5 minutes)
+
+# Logging settings
+LOG_LEVEL = os.environ.get('LOGLEVEL', 'INFO')
+
+print(f"✓ Config loaded: Numba cache={numba_cache}, API timeout={WEATHER_API_TIMEOUT}s")
+
+import logging
 from contextlib import asynccontextmanager
 from typing import Optional, Dict
 from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
 
 from weather_fetch import (
     weather_cache,
@@ -145,23 +191,6 @@ app = FastAPI(
     description="Real-time heat health risk assessment using WBGT, UTCI, and vulnerability metrics",
     version="2.0",
     lifespan=lifespan,
-)
-
-# The dashboard runs on a separate development server during local work.
-# Keep allowed origins configurable so deployment can restrict this further.
-allowed_origins = [
-    origin.strip()
-    for origin in os.getenv(
-        "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
-    ).split(",")
-    if origin.strip()
-]
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_credentials=False,
-    allow_methods=["GET"],
-    allow_headers=["*"],
 )
 
 
